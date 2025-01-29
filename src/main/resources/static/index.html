@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket 채팅 및 3D 오브젝트 이동</title>
+    <!-- Three.js CDN 추가 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        #chatContainer {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            width: 300px;
+        }
+        #chatLog {
+            width: 100%;
+            height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: white;
+        }
+        #messageInput {
+            width: 80%;
+            padding: 5px;
+        }
+        button {
+            padding: 5px 15px;
+        }
+        #threejs-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+<div id="chatContainer">
+    <div id="chatLog"></div>
+    <input type="text" id="messageInput" placeholder="메시지를 입력하세요...">
+    <button onclick="sendMessage()">전송</button>
+</div>
+<canvas id="threejs-canvas"></canvas>
+
+<script type="module">
+    // 채팅 WebSocket 설정
+    const chatSocket = new WebSocket('ws://localhost:8080/chat');
+    const chatLog = document.getElementById('chatLog');
+    const messageInput = document.getElementById('messageInput');
+
+    chatSocket.onopen = function(event) {
+        appendMessage("시스템", "WebSocket 연결됨", new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+    };
+
+    chatSocket.onmessage = function(event) {
+        const messageElement = document.createElement('div');
+        messageElement.textContent = event.data;  // 서버에서 이미 포맷된 메시지를 그대로 표시
+        chatLog.appendChild(messageElement);
+        chatLog.scrollTop = chatLog.scrollHeight;
+    };
+
+    chatSocket.onclose = function(event) {
+        appendMessage("시스템", "WebSocket 연결 종료", new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+    };
+
+    chatSocket.onerror = function(error) {
+        appendMessage("시스템", 'WebSocket 에러: ' + error.message, new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+    };
+
+    function sendMessage() {
+        const message = messageInput.value;
+        if (message) {
+            const jsonMessage = JSON.stringify({
+                sender: "나",
+                message: message,
+                time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+            });
+            chatSocket.send(jsonMessage);
+            messageInput.value = '';
+            appendMessage("나", message, new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+        }
+    }
+
+    function appendMessage(sender, message, time) {
+        const messageElement = document.createElement('div');
+        messageElement.textContent = `[${time}] ${sender === "나" ? "나" : sender}: ${message}`;
+        chatLog.appendChild(messageElement);
+        chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    // Enter 키로 메시지 전송
+    messageInput.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+            sendMessage();
+        }
+    });
+
+    // Three.js 설정
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({
+        canvas: document.getElementById('threejs-canvas'),
+        antialias: true
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // 바닥 추가
+    const floorGeometry = new THREE.PlaneGeometry(20, 20);
+    const floorMaterial = new THREE.MeshBasicMaterial({
+        color: 0x999999,
+        side: THREE.DoubleSide
+    });
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor.rotation.x = Math.PI / 2;
+    scene.add(floor);
+
+    // 플레이어 객체 생성
+    const geometry = new THREE.BoxGeometry();
+    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const player = new THREE.Mesh(geometry, material);
+    scene.add(player);
+
+    camera.position.set(0, 5, 10);
+    camera.lookAt(0, 0, 0);
+
+    // 다른 플레이어들을 저장할 객체
+    let otherPlayers = {};
+
+    // 게임 WebSocket 설정
+    const gameSocket = new WebSocket('ws://localhost:8080/game');
+    let speed = { x: 0, z: 0 };
+    let playerId = Math.random().toString(36).substr(2, 9); // 고유 ID 부여
+
+    gameSocket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (!otherPlayers[data.id]) {
+            // 새로운 플레이어 생성
+            const otherPlayerGeometry = new THREE.BoxGeometry();
+            const otherPlayerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const otherPlayer = new THREE.Mesh(otherPlayerGeometry, otherPlayerMaterial);
+            scene.add(otherPlayer);
+            otherPlayers[data.id] = otherPlayer;
+        }
+
+        // 기존 플레이어 위치 업데이트
+        const otherPlayer = otherPlayers[data.id];
+        otherPlayer.position.set(data.position.x, 0, data.position.z);
+    };
+
+    // 연결이 끊어진 플레이어 제거
+    gameSocket.onclose = (event) => {
+        console.log('Disconnected from WebSocket server');
+        // 연결이 끊어진 플레이어의 오브젝트 제거
+        Object.values(otherPlayers).forEach(player => {
+            scene.remove(player);
+        });
+        otherPlayers = {};
+    };
+
+    // 키 입력 이벤트 처리
+    window.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowUp') speed.z = -0.1;
+        if (event.key === 'ArrowDown') speed.z = 0.1;
+        if (event.key === 'ArrowLeft') speed.x = -0.1;
+        if (event.key === 'ArrowRight') speed.x = 0.1;
+    });
+
+    window.addEventListener('keyup', () => {
+        speed.x = 0;
+        speed.z = 0;
+    });
+
+    function animate() {
+        requestAnimationFrame(animate);
+
+        // 플레이어 이동
+        player.position.x += speed.x;
+        player.position.z += speed.z;
+
+        if (gameSocket.readyState === WebSocket.OPEN) {
+            gameSocket.send(JSON.stringify({
+                id: playerId,
+                position: {
+                    x: player.position.x,
+                    z: player.position.z
+                }
+            }));
+        }
+
+        renderer.render(scene, camera);
+    }
+    animate();
+</script>
+</body>
+</html>
