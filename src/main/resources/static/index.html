@@ -67,7 +67,7 @@
 
     chatSocket.onmessage = function(event) {
         const messageElement = document.createElement('div');
-        messageElement.textContent = event.data;  // 서버에서 이미 포맷된 메시지를 그대로 표시
+        messageElement.textContent = event.data;
         chatLog.appendChild(messageElement);
         chatLog.scrollTop = chatLog.scrollHeight;
     };
@@ -80,7 +80,7 @@
         appendMessage("시스템", 'WebSocket 에러: ' + error.message, new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
     };
 
-    function sendMessage() {
+    window.sendMessage = function() {
         const message = messageInput.value;
         if (message) {
             const jsonMessage = JSON.stringify({
@@ -142,65 +142,50 @@
     // 게임 WebSocket 설정
     const gameSocket = new WebSocket('ws://localhost:8080/game');
     let speed = { x: 0, z: 0 };
-    let playerId = Math.random().toString(36).substr(2, 9); // 고유 ID 부여
+    let playerId = Math.random().toString(36).substr(2, 9);
 
     gameSocket.onmessage = (event) => {
         const data = JSON.parse(event.data);
-
         if (!otherPlayers[data.id]) {
-            // 새로운 플레이어 생성
             const otherPlayerGeometry = new THREE.BoxGeometry();
             const otherPlayerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
             const otherPlayer = new THREE.Mesh(otherPlayerGeometry, otherPlayerMaterial);
             scene.add(otherPlayer);
             otherPlayers[data.id] = otherPlayer;
         }
-
-        // 기존 플레이어 위치 업데이트
         const otherPlayer = otherPlayers[data.id];
         otherPlayer.position.set(data.position.x, 0, data.position.z);
     };
 
-    // 연결이 끊어진 플레이어 제거
     gameSocket.onclose = (event) => {
         console.log('Disconnected from WebSocket server');
-        // 연결이 끊어진 플레이어의 오브젝트 제거
         Object.values(otherPlayers).forEach(player => {
             scene.remove(player);
         });
         otherPlayers = {};
     };
 
-    // 키 입력 이벤트 처리
     window.addEventListener('keydown', (event) => {
-        if (event.key === 'ArrowUp') speed.z = -0.1;
-        if (event.key === 'ArrowDown') speed.z = 0.1;
-        if (event.key === 'ArrowLeft') speed.x = -0.1;
-        if (event.key === 'ArrowRight') speed.x = 0.1;
+        switch (event.key) {
+            case 'ArrowUp': speed.z = -0.1; break;
+            case 'ArrowDown': speed.z = 0.1; break;
+            case 'ArrowLeft': speed.x = -0.1; break;
+            case 'ArrowRight': speed.x = 0.1; break;
+        }
     });
 
-    window.addEventListener('keyup', () => {
+    window.addEventListener('keyup', (event) => {
         speed.x = 0;
         speed.z = 0;
     });
 
     function animate() {
         requestAnimationFrame(animate);
-
-        // 플레이어 이동
         player.position.x += speed.x;
         player.position.z += speed.z;
-
         if (gameSocket.readyState === WebSocket.OPEN) {
-            gameSocket.send(JSON.stringify({
-                id: playerId,
-                position: {
-                    x: player.position.x,
-                    z: player.position.z
-                }
-            }));
+            gameSocket.send(JSON.stringify({ id: playerId, position: { x: player.position.x, z: player.position.z } }));
         }
-
         renderer.render(scene, camera);
     }
     animate();
