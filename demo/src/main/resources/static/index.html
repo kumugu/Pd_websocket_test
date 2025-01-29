@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket 채팅</title>
+    <style>
+        #chatLog {
+            width: 100%;
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            margin-bottom: 10px;
+            padding: 10px;
+        }
+        #messageInput {
+            width: 80%;
+            padding: 5px;
+        }
+        button {
+            padding: 5px 15px;
+        }
+    </style>
+</head>
+<body>
+<div id="chatLog"></div>
+<input type="text" id="messageInput" placeholder="메시지를 입력하세요...">
+<button onclick="sendMessage()">전송</button>
+
+<script>
+    const socket = new WebSocket('ws://localhost:8080/chat');
+    const chatLog = document.getElementById('chatLog');
+    const messageInput = document.getElementById('messageInput');
+
+    socket.onopen = function(event) {
+        appendMessage("시스템", "WebSocket 연결됨", new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+    };
+
+    socket.onmessage = function(event) {
+        const messageElement = document.createElement('div');
+        messageElement.textContent = event.data;  // 서버에서 이미 포맷된 메시지를 그대로 표시
+        chatLog.appendChild(messageElement);
+        chatLog.scrollTop = chatLog.scrollHeight;
+    };
+
+    socket.onclose = function(event) {
+        appendMessage("시스템", "WebSocket 연결 종료", new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+    };
+
+    socket.onerror = function(error) {
+        appendMessage("시스템", 'WebSocket 에러: ' + error.message, new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+    };
+
+    function sendMessage() {
+        const message = messageInput.value;
+        if (message) {
+            const jsonMessage = JSON.stringify({
+                sender: "나",
+                message: message,
+                time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+            });
+            socket.send(jsonMessage);
+            messageInput.value = '';
+            appendMessage("나", message, new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+        }
+    }
+
+    function appendMessage(sender, message, time) {
+        const messageElement = document.createElement('div');
+        messageElement.textContent = `[${time}] ${sender === "나" ? "나" : sender}: ${message}`;
+        chatLog.appendChild(messageElement);
+        chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    // Enter 키로 메시지 전송
+    messageInput.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+            sendMessage();
+        }
+    });
+</script>
+</body>
+</html>
